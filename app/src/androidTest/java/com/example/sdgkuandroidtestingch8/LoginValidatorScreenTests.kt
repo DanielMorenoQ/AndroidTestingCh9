@@ -19,6 +19,7 @@ import org.junit.Before
 import org.junit.Test
 
 
+// Random commment for testing purposes
 class LoginValidatorPage(composeTestRule: ComposeTestRule) {
     private val emailField = composeTestRule.onNodeWithTag("EmailField")
     private val passwordField = composeTestRule.onNodeWithTag("PasswordField")
