@@ -36,10 +36,13 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Setup Android SDK
+      # Setup Android Emulator to compile and run tests
+      - name: Setup compile SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-37'
+          api-level: 34
+          build-tools: 34.0.0
+          target: android-34
 
       # Setup Gradle cache to speed up builds
       - name: Setup Gradle
