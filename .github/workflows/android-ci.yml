@@ -1,85 +1,122 @@
-# Workflow name
-name: Android CI
+name: Android Existing Tests
 
-# GHA These are triggers
 on:
   push:
-    branches: [main]
+    branches: [main, 'class4/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
-# Permissions for  the workflow
 permissions:
   contents: read
 
-# Concurrency settings for the workflow
 concurrency:
-  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  group: android-existing-tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Test and Lint, and debug build
+  jvm:
+    name: Existing JVM tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
-      # Checkout virtual machine to get the code
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - name: Install test JDK
+        id: java21
+        uses: actions/setup-java@v4
         with:
-          persist-credentials: false
-
-      # Java version setup
-      - name: Set up Java
+          distribution: temurin
+          java-version: '21'
+      - name: Install daemon JDK
+        id: java25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
-
-      # Setup Android Emulator to compile and run tests
-      - name: Setup compile SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          build-tools: 34.0.0
-          target: android-34
-
-      # Setup Gradle cache to speed up builds
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      # Make Gradle wrapper executable
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      # Show toolchain versions for debugging
-      - name: Show toolchain versions
+      - name: Expose both toolchains
         run: |
-          java -version
-          javac -version
-          ./gradlew -version
-
-      # Run tests and lint, no daemon, stacktrace, continue on error, clean build, test debug unit tests, lint debug, assemble debug
-      - name: Run tests and lint
-        run: ./gradlew --no-daemon --stacktrace --continue clean testDebugUnitTest :app:lintDebug :app:assembleDebug
-
-      # Upload test results and lint reports as artifacts
-      - name: Upload test results
+          mkdir -p "$HOME/.gradle"
+          printf '\norg.gradle.java.installations.paths=%s,%s\n' \
+            '${{ steps.java21.outputs.path }}' \
+            '${{ steps.java25.outputs.path }}' >> "$HOME/.gradle/gradle.properties"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run existing JVM suite
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug
+      - name: Upload JVM evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quality-reports
-          path: |
-            app/build/reports/tests/testDebugUnitTest/
-            app/build/test-results/testDebugUnitTest/*.xml
-            app/build/reports/lint-results-debug.*
+          name: existing-jvm-results
+          retention-days: 7
           if-no-files-found: warn
-          retention-days: 7
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/outputs/apk/debug/*.apk
 
-      # Upload APK as artifact
-      - name: Upload APK
+  device:
+    name: Existing device tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test JDK
+        id: java21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install daemon JDK
+        id: java25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Expose both toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          printf '\norg.gradle.java.installations.paths=%s,%s\n' \
+            '${{ steps.java21.outputs.path }}' \
+            '${{ steps.java25.outputs.path }}' >> "$HOME/.gradle/gradle.properties"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Make wrapper executable
+        run: chmod +x gradlew
+      - name: Run existing device suite
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: ./gradlew :app:connectedDebugAndroidTest
+      - name: Upload device evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          name: existing-device-results
           retention-days: 7
+          if-no-files-found: warn
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
