@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SDGKUAndroidTestingCh8</string>
+    <string name="remember_me">Remember Me</string>
+    <string name="remember_me_disabled">Remember me Disabled</string>
+</resources>
