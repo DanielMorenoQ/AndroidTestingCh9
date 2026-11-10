@@ -1,0 +1,92 @@
+# Workflow name
+name: Android CI
+
+# GHA These are triggers
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Permissions for  the workflow
+permissions:
+  contents: read
+
+# Concurrency settings for the workflow
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Test and Lint, and debug build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Checkout virtual machine to get the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      # Java version setup
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # Android SDK setup
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+
+      # Setup Android Emulator to compile and run tests
+      - name: Setup compile SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
+          target: android-34
+
+      # Setup Gradle cache to speed up builds
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Make Gradle wrapper executable
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Show toolchain versions for debugging
+      - name: Show toolchain versions
+        run: |
+          java -version
+          javac -version
+          ./gradlew -version
+
+      # Run tests and lint, no daemon, stacktrace, continue on error, clean build, test debug unit tests, lint debug, assemble debug
+      - name: Run tests and lint
+        run: ./gradlew --no-daemon --stacktrace --continue clean testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      # Upload test results and lint reports as artifacts
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Upload APK as artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
